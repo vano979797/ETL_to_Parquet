@@ -1,6 +1,7 @@
 import duckdb
 import pandas as pd
 
+
 def run_analytics(df: pd.DataFrame) -> dict:
     """
     Выполняет SQL-аналитику над объединённым датафреймом.
@@ -30,7 +31,7 @@ def run_analytics(df: pd.DataFrame) -> dict:
         ORDER BY avg_total_sales DESC
     """).df()
 
-    # 2. Топ-10 игр по общим продажам
+    # 2. Топ-10 игр по продажам
     top_sales = duckdb.sql("""
         SELECT
             Name,
@@ -49,7 +50,7 @@ def run_analytics(df: pd.DataFrame) -> dict:
         LIMIT 10
     """).df()
 
-    # 3. Топ-10 игр по оценке критиков (с фильтром, что оценка не NULL и есть продажи)
+    # 3. Топ-10 игр по оценке критиков
     top_critic = duckdb.sql("""
         SELECT
             Name,

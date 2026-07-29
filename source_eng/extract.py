@@ -1,5 +1,8 @@
-import pandas as pd
 from pathlib import Path
+
+import pandas as pd
+
+from .config import DEFAULT_CONFIG
 
 
 def read_csv(filepath:str | Path) -> pd.DataFrame:
@@ -11,12 +14,11 @@ def read_json(filepath:str | Path) -> pd.DataFrame:
 def read_excel(filepath:str | Path) -> pd.DataFrame:
     return pd.read_excel(filepath)
 
-def load_all(base_dir:str | Path = 'data/raw', prefix='') -> tuple[pd.DataFrame,pd.DataFrame,pd.DataFrame]:
-    """ TODO: дорасписать логику поведения
+def load_all( prefix='',config = DEFAULT_CONFIG) -> tuple[pd.DataFrame,pd.DataFrame,pd.DataFrame]:
+    """
     Загружает все три источника данных из указанной папки.
 
     Args:
-        raw_dir (str | Path): Путь к папке с исходными файлами.
         prefix (str): Префикс для имён файлов (например, 'g_' для сгенерированных).
 
     Returns:
@@ -28,7 +30,7 @@ def load_all(base_dir:str | Path = 'data/raw', prefix='') -> tuple[pd.DataFrame,
     Raises:
         FileNotFoundError: Если какой-либо из требуемых файлов отсутствует.
     """
-    base = Path(base_dir)
+    base = config.raw_dir
     csv_path = base / f'{prefix}games.csv'
     json_path = base / f'{prefix}games.json'
     excel_path = base / f'{prefix}games_sales.xlsx'

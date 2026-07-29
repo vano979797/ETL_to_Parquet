@@ -1,5 +1,12 @@
-import pandas as pd
+import logging
 from pathlib import Path
+
+import pandas as pd
+
+from .config import DEFAULT_CONFIG
+
+
+logger = logging.getLogger(__name__)
 
 
 def save_parquet(df: pd.DataFrame, filepath: str| Path) -> None:
@@ -13,7 +20,9 @@ def save_parquet(df: pd.DataFrame, filepath: str| Path) -> None:
 
 def save_clean_data(df:pd.DataFrame, output_dir:str|Path = 'data/processed') -> None:
     """ Сохраняет готовый паркет."""
-    save_parquet(df,Path(output_dir) / 'games_clean.parquet')
+    if output_dir is None:
+        output_dir = DEFAULT_CONFIG.processed_dir
+    save_parquet(df, Path(output_dir) / 'games_clean.parquet')
 
 def save_analysis(result: dict,output_dir: str|Path = 'data/processed') -> None:
     """
@@ -25,4 +34,4 @@ def save_analysis(result: dict,output_dir: str|Path = 'data/processed') -> None:
         if isinstance(df, pd.DataFrame):
             save_parquet(df, out_dir / f"{name}.parquet")
         else:
-            print(f"Предупреждение: {name} не является DataFrame, пропущено.")
+            logger.warning(f"Пропущен ключ {name}: не является DataFrame")

@@ -1,7 +1,7 @@
-import pandas as pd
+import random
 from pathlib import Path
 
-import random
+import pandas as pd
 
 
 def clean_gen_data() -> bool:
@@ -15,7 +15,7 @@ def clean_gen_data() -> bool:
         try:
             file_path.unlink()
             print(f"Удалён файл: {file_path}")
-        except Exception as e:
+        except OSError as e:
             print(f"Не удалось удалить {file_path}: {e}")
 
 def gen_data():
@@ -99,7 +99,7 @@ def gen_data():
 
         print(f"✅ Сгенерировано {len(records)} записей в data/raw/")
         print(f"  - games.csv: все колонки ({len(df)} записей)")
-        print(f"  - games.json: Name, Platform, Critic_Score, User_Score")
-        print(f"  - games_sales.xlsx: Name, NA_sales, EU_sales, JP_sales, Other_sales")
+        print("  - games.json: Name, Platform, Critic_Score, User_Score")
+        print("  - games_sales.xlsx: Name, NA_sales, EU_sales, JP_sales, Other_sales")
 
 

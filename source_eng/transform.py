@@ -1,91 +1,92 @@
 import pandas as pd
 
+from .config import (
+    COLUMN_ORDER,
+    CRITIC_SCORE_RANGE,
+    SALES_COLS,
+    STRING_COLS,
+    USER_SCORE_RANGE,
+)
 
-def clean_csv(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Очистка данных из CSV-файла.
-    - Заполняет пропуски в stock нулём.
-    - Приводит price к float.
-    - Удаляет дубликаты по id.
-    """
-    df = df.copy()
-    df['Year_of_Release'] = pd.to_numeric(df['Year_of_Release'], errors='coerce')
-    median_year = df['Year_of_Release'].median()
-    df['Year_of_Release'] = df['Year_of_Release'].fillna(median_year).astype(int)
 
-    df['Critic_Score'] = pd.to_numeric(df['Critic_Score'], errors='coerce')
-    df['Critic_Score'] = df.groupby('Genre')['Critic_Score'].transform(
-        lambda x: x.fillna(x.mean())
-    )
-    overall_mean_critic = df['Critic_Score'].mean()
-    df['Critic_Score'] = df['Critic_Score'].fillna(overall_mean_critic)
-    df['Critic_Score'] = df['Critic_Score'].clip(0, 100).round().astype(int)
-
-    df['User_Score'] = pd.to_numeric(df['User_Score'], errors='coerce')
-    df['User_Score'] = df.groupby('Genre')['User_Score'].transform(
-        lambda x: x.fillna(x.mean())
-    )
-    overall_mean_user = df['User_Score'].mean()
-    df['User_Score'] = df['User_Score'].fillna(overall_mean_user)
-    df['User_Score'] = df['User_Score'].clip(0, 10).round(1)
-
-    sales_cols = ['NA_sales', 'EU_sales', 'JP_sales', 'Other_sales']
+def _clean_sales(df: pd.DataFrame, sales_cols: tuple) -> pd.DataFrame:
+    """Приводит колонки продаж к числовым, заполняет пропуски нулём, обрезает отрицательные."""
     for col in sales_cols:
         df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
         df[col] = df[col].clip(lower=0)
+    return df
 
-    df = df.drop_duplicates(subset=['Name'], keep='first')
+def _clean_scores(
+        df: pd.DataFrame,
+        score_col: str,
+        min_val: int,
+        max_val: int,
+        group_by_col: str | None = None
+) -> pd.DataFrame:
+    """Очищает колонку с оценкой: приводит к числу, заполняет пропуски (по группе или глобально), обрезает."""
+    df[score_col] = pd.to_numeric(df[score_col], errors='coerce')
 
-    string_cols = ['Name', 'Platform', 'Genre', 'Rating']
+    if group_by_col and group_by_col in df.columns:
+        df[score_col] = df.groupby(group_by_col)[score_col].transform(lambda x: x.fillna(x.mean()))
+
+    if df[score_col].isna().any():
+        df[score_col] = df[score_col].fillna(df[score_col].mean())
+    df[score_col] = df[score_col].clip(min_val, max_val)
+
+    return df
+
+def _clean_strings(df: pd.DataFrame, string_cols: tuple) -> pd.DataFrame:
+    """Удаляет пробелы по краям в строковых колонках."""
     for col in string_cols:
         if col in df.columns:
             df[col] = df[col].astype(str).str.strip()
 
     return df
 
-# Name,Platform,Year_of_Release,Genre,NA_sales,EU_sales,JP_sales,Other_sales,Critic_Score,User_Score,Rating
-
-def clean_json(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Очистка данных из JSON.
-    - Заполняет пропуски в rating значением 3.0.
-    - Приводит players к int.
-    """
-    df = df.copy()
-
-    if 'Critic_Score' in df.columns:
-        df['Critic_Score'] = pd.to_numeric(df['Critic_Score'], errors='coerce')
-        df['Critic_Score'] = df['Critic_Score'].fillna(df['Critic_Score'].mean())
-        df['Critic_Score'] = df['Critic_Score'].clip(0, 100).round().astype(int)
-
-    if 'User_Score' in df.columns:
-        df['User_Score'] = pd.to_numeric(df['User_Score'], errors='coerce')
-        df['User_Score'] = df['User_Score'].fillna(df['User_Score'].mean())
-        df['User_Score'] = df['User_Score'].clip(0, 10).round(1)
-
+def _deduplicate_by_name(df: pd.DataFrame) -> pd.DataFrame:
+    """Удаляет дубликаты по колонке Name, оставляя первую запись."""
     if 'Name' in df.columns:
         df = df.drop_duplicates(subset=['Name'], keep='first')
-        df['Name'] = df['Name'].astype(str).str.strip()
 
     return df
 
-def clean_excel(df:pd.DataFrame) -> pd.DataFrame:
-    """
-    Очистка данных из Excel.
-    - Ограничивает discount диапазоном [0, 100].
-    - Заполняет пропуски в discount нулём.
-    """
+def clean_csv(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
-    sales_cols = ['NA_sales', 'EU_sales', 'JP_sales', 'Other_sales']
-    for col in sales_cols:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
-            df[col] = df[col].clip(lower=0)
+    # Год выпуска
+    df['Year_of_Release'] = pd.to_numeric(df['Year_of_Release'], errors='coerce')
+    df['Year_of_Release'] = df['Year_of_Release'].fillna(df['Year_of_Release'].median()).astype(int)
 
-    # Удаляем дубликаты по Name
-    if 'Name' in df.columns:
-        df = df.drop_duplicates(subset=['Name'], keep='first')
-        df['Name'] = df['Name'].astype(str).str.strip()
+    # Оценки с группировкой по жанру
+    df = _clean_scores(df, 'Critic_Score', *CRITIC_SCORE_RANGE, group_by_col='Genre')
+    df = _clean_scores(df, 'User_Score', *USER_SCORE_RANGE, group_by_col='Genre')
+
+    # Продажи
+    df = _clean_sales(df, SALES_COLS)
+
+    # Строки и дубликаты
+    df = _clean_strings(df, STRING_COLS)
+    df = _deduplicate_by_name(df)
+
+    return df
+
+def clean_json(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+    if 'Critic_Score' in df.columns:
+        df = _clean_scores(df, 'Critic_Score', *CRITIC_SCORE_RANGE)
+    if 'User_Score' in df.columns:
+        df = _clean_scores(df, 'User_Score', *USER_SCORE_RANGE)
+    df = _clean_strings(df, STRING_COLS)
+    df = _deduplicate_by_name(df)
+
+    return df
+
+def clean_excel(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+    sales_present = [col for col in SALES_COLS if col in df.columns]
+    if sales_present:
+        df = _clean_sales(df, sales_present)
+    df = _clean_strings(df, STRING_COLS)
+    df = _deduplicate_by_name(df)
 
     return df
 
@@ -118,6 +119,7 @@ def merge_data(
                 merged.drop(columns=[f"{col}_json"], inplace=True)
 
     excel_cols_to_merge = [col for col in excel_df.columns if col != 'Name' and col in merged.columns]
+
     if excel_cols_to_merge:
         merged = pd.merge(merged, excel_df[['Name'] + excel_cols_to_merge], on='Name', how='left',
                           suffixes=('', '_excel'))
@@ -126,15 +128,12 @@ def merge_data(
                 merged[col] = merged[col].fillna(merged[f"{col}_excel"])
                 merged.drop(columns=[f"{col}_excel"], inplace=True)
 
-    sales_cols = ['NA_sales', 'EU_sales', 'JP_sales', 'Other_sales']
-    for col in sales_cols:
+    for col in SALES_COLS:
         if col not in merged.columns:
             merged[col] = 0
-    merged['Total_sales'] = merged[sales_cols].sum(axis=1).round(2)
+    merged['Total_sales'] = merged[list(SALES_COLS)].sum(axis=1).round(2)
 
-    column_order = ['Name', 'Platform', 'Year_of_Release', 'Genre',
-                    'NA_sales', 'EU_sales', 'JP_sales', 'Other_sales', 'Total_sales',
-                    'Critic_Score', 'User_Score', 'Rating']
-    final_columns = [col for col in column_order if col in merged.columns]
+    final_columns = [col for col in COLUMN_ORDER if col in merged.columns]
     merged = merged[final_columns]
+
     return merged

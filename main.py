@@ -1,16 +1,15 @@
-import logging
-import sys
 import argparse
+from datetime import datetime, timezone
+import logging
 from pathlib import Path
-from datetime import datetime
+import sys
 
-# TODO прокинуть адреса через модули, для унификации импортов
-from source_eng.extract import load_all
-from source_eng.transform import clean_csv, clean_json, clean_excel, merge_data
-from source_eng.analysis import run_analytics
-from source_eng.load import save_clean_data, save_analysis
 from scripts.generate_data import gen_data
-
+from source_eng.analysis import run_analytics
+from source_eng.config import DEFAULT_CONFIG
+from source_eng.extract import load_all
+from source_eng.load import save_analysis, save_clean_data
+from source_eng.transform import clean_csv, clean_excel, clean_json, merge_data
 
 logging.basicConfig(
     level=logging.INFO,
@@ -23,7 +22,7 @@ logging.basicConfig(
 logger = logging.getLogger('etl_pipeline')
 
 
-def check_file_exists(prefix: str = '') -> bool:
+def check_file_exists(prefix: str = '', raw_dir: str | Path = DEFAULT_CONFIG.raw_dir) -> bool:
     """
     Проверяет наличие всех трёх файлов с указанным префиксом в папке data/raw.
 
@@ -33,21 +32,37 @@ def check_file_exists(prefix: str = '') -> bool:
     Returns:
         bool: True, если все три файла существуют, иначе False.
     """
-    base = Path('data/raw')
+    raw_dir = Path(raw_dir)
     required_files = [
         f'{prefix}games.csv',
         f'{prefix}games.json',
         f'{prefix}games_sales.xlsx'
     ]
     for fname in required_files:
-        if not (base / fname).exists():
-            logger.debug(f"Файл не найден: {base / fname}")
+        if not (raw_dir / fname).exists():
+            logger.debug(f"Файл не найден: {raw_dir / fname}")
             return False
     return True
 
+def resolve_mode(mode: str, has_local: bool, has_gen: bool) -> tuple[str, bool]:
+    """Определяет префикс и нужно ли генерировать данные."""
+    if mode == 'local':
+        if not has_local:
+            logger.error("❌ Режим 'local' выбран, но файлы без префикса не найдены")
+            sys.exit(1)
+        return '', False
+    if mode == 'gen':
+        return 'g_', True
+    # auto
+    if has_local:
+        logger.info("Авторежим: найдены локальные файлы")
+        return '', False
+    logger.info("Авторежим: локальные файлы не найдены, генерируем")
+    return 'g_', True
+
 def run_etl(
-        raw_dir: str|Path = 'data/raw',
-        processed_base: str = 'data/processed',
+        raw_dir: str | Path = DEFAULT_CONFIG.raw_dir,
+        processed_dir: str | Path = DEFAULT_CONFIG.processed_dir,
         prefix: str = '',
         mode: str = 'auto'
 ) -> None:
@@ -58,8 +73,9 @@ def run_etl(
     """
     logger.info("Запуск ETL!")
 
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    processed_dir = Path(processed_base) / timestamp
+    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d_%H-%M-%S")
+    raw_dir = Path(raw_dir)
+    processed_dir = Path(processed_dir) / timestamp
     processed_dir.mkdir(parents=True, exist_ok=False)
     logger.info(f"Результаты будут сохранены в {processed_dir}")
 
@@ -67,6 +83,7 @@ def run_etl(
         f.write(f"Run timestamp: {timestamp}\n")
         f.write(f"Mode: {mode}\n")
         f.write(f"Prefix: {prefix}\n")
+        f.write(f"Raw data dir: {raw_dir}\n")
 
     try:
         logger.info(f"Чтение данных из {raw_dir}")
@@ -95,8 +112,11 @@ def run_etl(
         logger.info("ETL-пайплайн завершён успешно!")
         logger.info(f"Результаты сохранены в {processed_dir} под названием games_clean.parquet")
 
-    except Exception as e:
-        logger.error(f"Ошибка в ETL: {e}", exc_info=True)
+        logger.info("✅ ETL-пайплайн завершён успешно!")
+
+
+    except Exception:
+        logger.exception("Ошибка в ETL")
         raise
 
 def main():
@@ -122,38 +142,30 @@ def main():
         help='Папка для сохранения результатов'
     )
     args = parser.parse_args()
+
     mode = args.mode
     raw_dir = args.raw
     processed_dir = args.processed
     logger.info(f"Выбран режим: {mode}")
 
-    has_local = check_file_exists(prefix='')
-    has_gen = check_file_exists(prefix='g_')
+    has_local = check_file_exists(prefix='', raw_dir=raw_dir)
+    has_gen = check_file_exists(prefix='g_', raw_dir=raw_dir)
 
     logger.debug(f"Наличие локальных файлов: {has_local}")
     logger.debug(f"Наличие сгенерированных файлов: {has_gen}")
 
-    if mode == 'local':
-        if not has_local:
-            logger.error("❌ Режим 'local' выбран, но файлы без префикса не найдены в data/raw/")
-            sys.exit(1)
-        prefix = ''
-        logger.info("Используем локальные пользовательские файлы (без префикса)")
-    elif mode == 'gen':
-        logger.info("Режим 'generate': генерируем новые данные...")
-        gen_data()
-        prefix = 'g_'
-        logger.info("Используем сгенерированные файлы (с префиксом 'g_')")
-    else:
-        # Выбран mode = auto
-        if has_local:
-            prefix = ''
-            logger.info("Авторежим: найдены локальные файлы, используем их (без префикса)")
-        else:
-            gen_data()
-            prefix = 'g_'
-            logger.info("Используем сгенерированные файлы (с префиксом 'g_')")
-    run_etl(raw_dir=raw_dir, processed_base=processed_dir,prefix=prefix,mode=mode)
+    prefix, may_gen = resolve_mode(mode,has_local,has_gen)
+
+    if may_gen:
+        logger.info("Генерация новых данных...")
+        gen_data()  # создаёт файлы с префиксом 'g_'
+
+    run_etl(
+        raw_dir=raw_dir,
+        processed_dir=processed_dir,
+        prefix=prefix,
+        mode=mode,
+    )
 
 if __name__ == '__main__':
     main()

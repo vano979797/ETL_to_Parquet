@@ -1,7 +1,8 @@
-import streamlit as st
+from pathlib import Path
+
 import pandas as pd
 import plotly.express as px
-from pathlib import Path
+import streamlit as st
 
 # Настройка страницы
 st.set_page_config(
@@ -83,7 +84,7 @@ filtered_df = filtered_df[
     (filtered_df['Year_of_Release'] <= year_range[1])
     ]
 
-# --- Основные метрики (KPI) ---
+# --- Основные метрики ---
 st.subheader("📊 Ключевые показатели")
 col1, col2, col3, col4 = st.columns(4)
 col1.metric("Всего игр", len(filtered_df))
